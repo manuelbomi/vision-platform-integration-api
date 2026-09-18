@@ -1,0 +1,32 @@
+# Minimal, runnable stack for local use: `docker compose up`.
+#
+# SQLite (via a mounted volume) is the default storage - good enough for a
+# single instance / demo / small deployment. For a production, multi-instance
+# rollout, swap the sql_logger plugin's `db_path` for a Postgres connection
+# (see the README's "Limitations & production hardening notes") and put the
+# in-memory rate limiter behind Redis instead.
+
+services:
+  api:
+    build: .
+    image: vision-platform-integration-api:local
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config
+    environment:
+      - API_KEYS_DB_PATH=data/api_keys.db
+      - EVENTS_DB_PATH=data/events.db
+      - PLUGINS_CONFIG_PATH=config/plugins.yaml
+      - RATE_LIMIT_CAPACITY=20
+      - RATE_LIMIT_REFILL_PER_SEC=5
+      - DISPATCH_WORKERS=2
+      # Set these only if you enable the corresponding plugins in
+      # config/plugins.yaml - never commit real values.
+      # - SLACK_WEBHOOK_URL=
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

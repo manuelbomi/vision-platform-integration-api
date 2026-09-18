@@ -1,0 +1,39 @@
+# Plugin configuration, loaded dynamically at startup by
+# src/api/plugins/loader.py. Each entry names a plugin module/class to
+# import and instantiate, whether it's enabled, and its own config block.
+#
+# The SQL logger is on by default so `docker compose up` gives you a
+# working audit trail with zero extra setup. The webhook forwarder and
+# Slack notifier are off by default because they need a real downstream
+# URL / Slack webhook - flip `enabled: true` and fill in the config once
+# you have one.
+
+plugins:
+  - name: sql_logger
+    module: api.plugins.sql_logger
+    class: SqlLoggerPlugin
+    enabled: true
+    config:
+      db_path: "data/events.db"
+
+  - name: webhook_forwarder
+    module: api.plugins.webhook_forwarder
+    class: WebhookForwarderPlugin
+    enabled: false
+    config:
+      # Replace with the real downstream endpoint before enabling.
+      url: "https://example.com/downstream/vision-events"
+      timeout_seconds: 5.0
+      max_retries: 5
+      base_delay_seconds: 0.5
+      backoff_factor: 2.0
+
+  - name: slack_notifier
+    module: api.plugins.slack_notifier
+    class: SlackNotifierPlugin
+    enabled: false
+    config:
+      # Name of the environment variable holding the real Slack incoming
+      # webhook URL. Never put the actual URL here.
+      webhook_env_var: "SLACK_WEBHOOK_URL"
+      timeout_seconds: 5.0
