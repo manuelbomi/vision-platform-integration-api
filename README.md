@@ -202,6 +202,79 @@ To turn on the Slack notifier or webhook forwarder, edit `config/plugins.yaml`
 (`enabled: true`) and set the matching environment variable (e.g. `SLACK_WEBHOOK_URL`) in
 `docker-compose.yml` or your shell - never commit a real webhook URL.
 
+### Read-only endpoints (list events, stats, plugin config)
+
+Three small, additive, read-only endpoints exist alongside the webhook receiver, all
+protected by the same `X-API-Key` auth dependency:
+
+- **`GET /events/recent?limit=50`** - the most recently logged events, newest first, read
+  straight from the same SQLite table the `sql_logger` plugin already writes (no second,
+  divergent store). Returns a JSON list of normalized events plus `received_at` (when this
+  service persisted the row).
+- **`GET /events/stats`** - aggregate counts over that same table: `total_events`,
+  `events_by_type`, `events_by_camera`.
+- **`GET /plugins`** - reflects `config/plugins.yaml` back as data (`name`, `module`,
+  `class_name`, `enabled`) without importing/instantiating anything, so you can see what's
+  configured without reading the YAML by hand.
+
+```bash
+curl -H "X-API-Key: <your-key>" "http://127.0.0.1:8000/events/recent?limit=10"
+curl -H "X-API-Key: <your-key>" "http://127.0.0.1:8000/events/stats"
+curl -H "X-API-Key: <your-key>" "http://127.0.0.1:8000/plugins"
+```
+
+These three endpoints are what the [admin dashboard](#admin-dashboard) below is built on.
+
+## Admin Dashboard
+
+![Admin dashboard screenshot](docs/screenshots/admin-dashboard.png)
+
+A small React + TypeScript admin dashboard lives in `frontend/`. It shows a live table of
+recently normalized events (camera, event type, confidence, timestamps) pulled from
+`GET /events/recent`, a panel of which plugins are enabled (from `GET /plugins`), and a
+form that POSTs a sample payload to `/webhooks/events` so you can watch an event go from
+submission to appearing in the table in real time. The screenshot above is a genuine
+capture of the dashboard running against a live backend seeded with real events sent
+through the actual `/webhooks/events` endpoint - not a mockup.
+
+### Run it locally
+
+```bash
+# 1. Start the backend (see "Setup & run" above) and mint a dev API key
+uvicorn api.main:app --app-dir src --reload
+python scripts/create_api_key.py "dashboard-dev"
+
+# 2. Start the dashboard
+cd frontend
+npm install
+npm run dev
+```
+
+Open the dashboard (Vite prints the local URL, typically `http://localhost:5173`), paste
+the API key from step 1 into the "X-API-Key" field at the top, and the events table,
+stats, and plugin panel will populate. Use the "Send a test event" form to fire a sample
+detection at `/webhooks/events?adapter=generic_json` and watch it appear in the table on
+the next poll (every 4 seconds).
+
+By default the dashboard talks to `http://127.0.0.1:8000` (the standard local `uvicorn`
+address). To point it at a different backend (e.g. Docker Compose), copy
+`frontend/.env.example` to `frontend/.env.local` and set `VITE_API_BASE_URL`.
+
+### Run it with Docker Compose
+
+`docker compose up --build` now also builds and starts `dashboard-ui` (a multi-stage
+`frontend/Dockerfile`: `npm run build` in a Node stage, served by nginx) on
+`http://localhost:8080`, alongside the existing `api` service on `http://localhost:8000`.
+
+### Type checking and build
+
+```bash
+cd frontend
+npm install
+npx tsc -b --noEmit   # zero errors
+npm run build          # production build to frontend/dist/
+```
+
 ## Project structure
 
 ```
@@ -227,11 +300,18 @@ vision-platform-integration-api/
 ├── config/plugins.yaml           # Which plugins are enabled + their config
 ├── scripts/create_api_key.py     # CLI to mint a local/dev API key
 ├── tests/                        # pytest suite (see below)
+├── frontend/                     # React + TypeScript admin dashboard (see "Admin Dashboard")
+│   ├── src/
+│   │   ├── App.tsx                # Dashboard UI: events table, plugin panel, test-event form
+│   │   ├── types.ts               # TS interfaces mirroring the Pydantic models
+│   │   └── api.ts                 # Typed fetch helpers for the backend
+│   └── Dockerfile                 # Multi-stage: npm build -> nginx serve
+├── docs/screenshots/admin-dashboard.png
 ├── Dockerfile
 ├── docker-compose.yml
 ├── requirements.txt
 ├── pyproject.toml                # pytest + ruff configuration
-└── .github/workflows/ci.yml      # lint + test on every push/PR
+└── .github/workflows/ci.yml      # lint + test (Python) and build + typecheck (frontend)
 ```
 
 ## Testing
@@ -256,8 +336,13 @@ The suite covers:
   configured max and then given up on; a non-retryable plugin's failure never blocks
   other plugins. Backoff delays in tests are configured to be tiny (milliseconds) so the
   suite stays fast.
+- **The new read-only endpoints** (`tests/test_events_recent.py`) - events sent through
+  the real webhook + dispatch path, logged by the real `SqlLoggerPlugin` (not a fake),
+  are read back correctly by `GET /events/recent` and aggregated correctly by
+  `GET /events/stats`; both endpoints and `GET /plugins` reject requests without a valid
+  API key.
 
-All 23 tests pass locally (`23 passed`), and `ruff check .` is clean.
+All 29 tests pass locally (`29 passed`), and `ruff check .` is clean.
 
 ## Limitations & production hardening notes
 

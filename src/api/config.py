@@ -20,6 +20,11 @@ class Settings:
     rate_limit_capacity: int = int(os.getenv("RATE_LIMIT_CAPACITY", "20"))
     rate_limit_refill_per_sec: float = float(os.getenv("RATE_LIMIT_REFILL_PER_SEC", "5"))
     dispatch_workers: int = int(os.getenv("DISPATCH_WORKERS", "2"))
+    # Comma-separated list of origins allowed to call this API from a
+    # browser (e.g. the admin dashboard in frontend/). "*" (the default) is
+    # fine for local dev; a real deployment should set this to the
+    # dashboard's actual origin(s) instead.
+    cors_allowed_origins: str = os.getenv("CORS_ALLOWED_ORIGINS", "*")
 
 
 # A single, mutable settings instance. Tests are free to overwrite fields on

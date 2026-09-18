@@ -30,3 +30,20 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+
+  # Admin dashboard (frontend/): a small Vite/React static site, built and
+  # served by nginx. Talks to the `api` service's *host*-published port
+  # (http://localhost:8000) directly from the browser, so it needs no
+  # server-side proxying - just CORS, which `api` already allows by default
+  # (see CORS_ALLOWED_ORIGINS in src/api/config.py). Runs on 8080 so it
+  # never collides with the API's own 8000.
+  dashboard-ui:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE_URL: http://localhost:8000
+    image: vision-platform-admin-dashboard:local
+    ports:
+      - "8080:80"
+    depends_on:
+      - api

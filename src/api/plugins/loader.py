@@ -45,3 +45,31 @@ def load_plugins(config_path: str) -> list[BasePlugin]:
         logger.info("Loaded plugin '%s' (%s.%s)", plugin.name, module_name, class_name)
 
     return plugins
+
+
+def list_configured_plugins(config_path: str) -> list[dict[str, str | bool]]:
+    """Describe every plugin declared in the given YAML file, enabled or not.
+
+    Unlike :func:`load_plugins`, this never imports or instantiates plugin
+    classes - it just reflects the config back as data, which is all the
+    read-only ``GET /plugins`` endpoint needs. Kept here (rather than
+    re-parsing the YAML in ``main.py``) so there is exactly one place that
+    understands the shape of ``config/plugins.yaml``.
+    """
+    path = Path(config_path)
+    if not path.exists():
+        logger.warning("Plugin config file %s not found; reporting no plugins", config_path)
+        return []
+
+    with path.open("r", encoding="utf-8") as f:
+        data = yaml.safe_load(f) or {}
+
+    return [
+        {
+            "name": entry.get("name", ""),
+            "module": entry.get("module", ""),
+            "class_name": entry.get("class", ""),
+            "enabled": bool(entry.get("enabled", False)),
+        }
+        for entry in data.get("plugins", [])
+    ]
